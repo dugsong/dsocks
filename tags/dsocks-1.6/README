@@ -1,0 +1,38 @@
+
+dsocks
+------
+
+only enough of SOCKS4 and SOCKS5 to use the built-in OpenSSH (e.g. ssh
+-D <local_port> <gateway>), or Tor local SOCKS proxy with *BSD systems
+(including MacOS X - just use 'bsdmake').
+
+set LD_PRELOAD/DYLD_INSERT_LIBRARIES to load this library to wrap a
+client app, or use the dsocks{-torify}.sh scripts. this only works for
+dynamically-linked binaries. to prevent DNS leaks while using Tor with
+statically-linked binaries, use the tor-dns-proxy.py script.
+
+useful environment variables:
+
+DSOCKS_VERSION		SOCKS protocol to use - "4", "5", or "Tor".
+			defaults to "4".
+
+DSOCKS_PROXY		proxy server specified as "ip", or "ip:port".
+			defaults to "127.0.0.1:1080".
+
+the following optional variables may be used to intercept DNS requests
+to tunnel via TCP to an internal nameserver:
+
+DSOCKS_NAMESERVER	internal nameserver to tunnel requests to, 
+			specified as "ip", or "ip:port".
+
+LOCALDOMAIN		resolver(3) search path override.
+
+pre-OpenBSD 3.4-current needs r1.69 of src/libexec/ld.so to work
+(set environ before calling constructors).
+
+tor-dns-proxy.py requires dpkt: http://monkey.org/~dugsong/dpkt/
+
+-d.
+
+---
+http://monkey.org/~dugsong/
