@@ -6,10 +6,12 @@ LIB		= dsocks
 HDRS		= dsocks.h
 SRCS		= dsocks.c atomicio.c
 NOPROFILE	= yes
+STRIP		=
 
 LIBDIR		= /usr/local/lib
 
 .if ${unix} == "We run Darwin, not UNIX."
+NO_PROFILE	= yes
 OSXFLAGS	= -nostdlib -flat_namespace -fno-common -undefined suppress
 CFLAGS		+= $(OSXFLAGS)
 # XXX - hack around missing LDFLAGS in bsd.lib.mk target
