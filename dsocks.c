@@ -604,9 +604,10 @@ _dsocks_init(void)
 	}
 	if ((pw = getpwuid(getuid())) != NULL) {
 		strlcpy(_dsocks_user, pw->pw_name, sizeof(_dsocks_user));
-	} else
-		errx(1, "(dsocks) who are you?");
-
+	} else {
+		/* XXX - getpwuid() actually fails on MacOS X Leopard! */
+		strlcpy(_dsocks_user, getenv("USER"), sizeof(_dsocks_user));
+	}
 #ifndef DL_LAZY
 # define DL_LAZY RTLD_LAZY
 #endif
