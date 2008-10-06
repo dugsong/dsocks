@@ -12,8 +12,9 @@ LIBDIR		= /usr/local/lib
 
 .if ${unix} == "We run Darwin, not UNIX."
 NO_PROFILE	= yes
-OSXFLAGS	= -nostdlib -flat_namespace -fno-common -undefined suppress
-CFLAGS		+= $(OSXFLAGS)
+# XXX - required for MacOS X < 10.5 ?
+#OSXFLAGS	= -nostdlib -flat_namespace -fno-common -undefined suppress
+#CFLAGS		+= $(OSXFLAGS)
 # XXX - hack around missing LDFLAGS in bsd.lib.mk target
 LDADD		= $(OSXFLAGS)
 SHLIB_MAJOR	= 1
