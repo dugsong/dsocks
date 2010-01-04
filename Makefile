@@ -16,7 +16,7 @@ NO_PROFILE	= yes
 #OSXFLAGS	= -nostdlib -flat_namespace -fno-common -undefined suppress
 #CFLAGS		+= $(OSXFLAGS)
 # XXX - hack around missing LDFLAGS in bsd.lib.mk target
-LDADD		= $(OSXFLAGS)
+LDADD		= $(OSXFLAGS) -lresolv
 SHLIB_MAJOR	= 1
 .endif
 
