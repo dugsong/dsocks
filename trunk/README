@@ -3,8 +3,9 @@ dsocks
 ------
 
 only enough of SOCKS4 and SOCKS5 to use the built-in OpenSSH (e.g. ssh
--D <local_port> <gateway>), or Tor local SOCKS proxy with *BSD systems
-(including MacOS X - just use 'bsdmake').
+-D <local_port> <gateway>), or Tor local SOCKS proxy with Linux (gmake
+-f GNUMakefile) or *BSD systems (including MacOS X - just use
+'bsdmake').
 
 set LD_PRELOAD/DYLD_INSERT_LIBRARIES to load this library to wrap a
 client app, or use the dsocks{-torify}.sh scripts. this only works for

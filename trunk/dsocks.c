@@ -34,6 +34,10 @@
 #include "atomicio.h"
 #include "dsocks.h"
 
+#ifdef __linux__
+size_t	strlcpy(char *dst, const char *src, size_t siz);
+#endif
+
 typedef int (*connect_fn)(int, const struct sockaddr *, socklen_t);
 typedef int (*getaddrinfo_fn)(const char *, const char *,
                               const struct addrinfo *, struct addrinfo **);
@@ -41,7 +45,7 @@ typedef struct hostent *(*gethostbyname_fn)(const char *name);
 
 static int		  _dsocks_tor;
 static struct sockaddr_in _dsocks_sin, _dsocks_ns;
-static char		  _dsocks_user[MAXLOGNAME + 1];
+static char		  _dsocks_user[8 + 1];
 static char		  _dsocks_host[MAXHOSTNAMELEN + 1];
 static connect_fn	  _dsocks_connect, _sys_connect;
 static getaddrinfo_fn	  _sys_getaddrinfo;
@@ -63,7 +67,9 @@ _sin_aton(const char *str, struct sockaddr_in *sin, int default_port)
 		port = p ? atoi(p) : default_port;
 		if (ip != -1 && port != 0) {
 			sin->sin_family = AF_INET;
+#ifndef __linux__
 			sin->sin_len = sizeof(sin);
+#endif
 			sin->sin_addr.s_addr = ip;
 			sin->sin_port = htons(port);
 			ret = 0;
@@ -121,6 +127,9 @@ _dsocks4_connect(int fd, const struct sockaddr *sa, socklen_t slen)
 static int
 _dsocks5_error(int rep)
 {
+	if (rep == DSOCKS5_REP_SUCCESS) {
+		return (0);
+	}
 	if (rep == DSOCKS5_REP_NOTALLOWED) {
 		errno = ECONNRESET;
 	} else if (rep == DSOCKS5_REP_NETUNREACH) {
@@ -131,11 +140,9 @@ _dsocks5_error(int rep)
 		errno = ECONNREFUSED;
 	} else if (DSOCKS5_REP_TTLEXPIRED) {
 		errno = ETIMEDOUT;
-	} else if (rep != DSOCKS5_REP_SUCCESS) {
+	} else {
 		errno = ECONNABORTED;
-	} else
-		return (0);
-	
+	}
 	return (1);
 }
 
@@ -161,37 +168,57 @@ _dsocks5_connect(int fd, const struct sockaddr *sa, socklen_t slen)
 
 	if (atomicio(write, fd, (char *)auth, 3) != 3) {
 		warn("(dsocks5) error sending auth request");
-	} else if (atomicio(read, fd, (char *)auth, 2) != 2) {
+		return (-1);
+	} 
+	if (atomicio(read, fd, (char *)auth, 2) != 2) {
 		warn("(dsocks5) error reading auth reply");
-	} else if (auth->ver != 5) {
+		return (-1);
+	}
+	if (auth->ver != 5) {
 		warnx("(dsocks5) invalid auth reply: version = %d", auth->ver);
-	} else if (auth->nmeths != DSOCKS5_METHOD_NOAUTH) {
+		return (-1);
+	}
+	if (auth->nmeths != DSOCKS5_METHOD_NOAUTH) {
 		warnx("(dsocks5) authentication required");
-	} else if (atomicio(write, fd, (char *)msg, len) != len) {
+		return (-1);
+	}
+	if (atomicio(write, fd, (char *)msg, len) != len) {
 		warn("(dsocks5) error sending connect request");
-	} else if (atomicio(read, fd, (char *)msg, len) != len) {
+		return (-1);
+	} 
+	if (atomicio(read, fd, (char *)msg, len) != len) {
 		warn("(dsocks5) error reading connect reply");
-	} else if (!_dsocks5_error(msg->cmd))
-		return (0);
-	
-	return (-1);
+		return (-1);
+	} 
+	if (_dsocks5_error(msg->cmd)) {
+		warn("(dsocks5) unknown SOCKS5 error code: %d", msg->cmd);
+		return (-1);
+	}
+	return (0);
 }
 	
 int
 connect(int fd, const struct sockaddr *sa, socklen_t len)
 {
 	struct sockaddr_in sin;
+	int oval;
+	socklen_t olen = sizeof(oval);
 	
-	if (sa->sa_family != AF_INET || IS_LOOPBACK(sa))
+	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &oval, &olen) < 0) {
+		return (-1);
+	}
+	/* Only handle non-loopback, Internet stream sockets. */
+	if (sa->sa_family != AF_INET || len != sizeof(sin) ||
+	    IS_LOOPBACK(sa) || oval != SOCK_STREAM) {
 		return ((*_sys_connect)(fd, sa, len));
-
-	memcpy(&sin, sa, sizeof(sin));
+	}
 	if ((*_sys_connect)(fd, (struct sockaddr *)&_dsocks_sin,
 		sizeof(_dsocks_sin)) == -1) {
 		warnx("(dsocks) couldn't connect to proxy at %s",
 		    _sin_ntoa(&_dsocks_sin));
 		return (-1);
 	}
+	memcpy(&sin, sa, sizeof(sin));
 	return ((*_dsocks_connect)(fd, (struct sockaddr *)&sin, sizeof(sin)));
 }
 
@@ -227,6 +254,10 @@ static char *h_addr_ptrs[MAXADDRS + 1];
 static struct hostent host;
 static char *host_aliases[MAXALIASES];
 static char hostbuf[BUFSIZ+1];
+
+#ifdef NS_GET16
+#define _getshort ns_get16
+#endif
 
 static struct hostent *
 _getanswer(const u_char *answer, int anslen, const char *qname, int qtype)
