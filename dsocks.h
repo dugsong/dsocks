@@ -9,12 +9,20 @@
 #ifndef DSOCKS_H
 #define DSOCKS_H
 
+#ifndef __GNUC__
+# ifndef __attribute__
+#  define __attribute__(x)
+# endif
+# pragma pack(1)
+#endif
+
 struct dsocks4_hdr {
 	uint8_t			vn;	/* version number */
 	uint8_t			cd;	/* command code */
 	uint16_t		dport;	/* destination port */
 	uint32_t		dst;	/* destination IP */
-};
+} __attribute__((__packed__));
+
 #define DSOCKS4_HDR_LEN		8
 
 #define DSOCKS4_VN_REQUEST	4
@@ -31,7 +39,7 @@ struct dsocks5_auth {
 	uint8_t			ver;	/* version number */
 	uint8_t			nmeths;	/* number of methods */
 	uint8_t			method;	/* XXX - no auth */
-};
+} __attribute__((__packed__));
 
 struct dsocks5_msg {
 	uint8_t			ver;	/* version number */
@@ -40,7 +48,8 @@ struct dsocks5_msg {
 	uint8_t			atyp;	/* address type (IPv4 - 0x01) */
 	uint32_t		dst;	/* destination IP */
 	uint16_t		dport;	/* destination port */
-};
+} __attribute__((__packed__));
+
 #define DSOCKS5_MSG_LEN		10
 
 #define DSOCKS5_METHOD_NOAUTH	0x00
@@ -61,6 +70,8 @@ struct dsocks5_msg {
 
 #ifdef __APPLE__
 # define DSOCKS_PATH_LIBC	"libc.dylib"
+#elif defined(__linux__)
+# define DSOCKS_PATH_LIBC	"libc.so.6"
 #else
 # define DSOCKS_PATH_LIBC	"libc.so"
 #endif
