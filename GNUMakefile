@@ -1,0 +1,33 @@
+# $Id$
+
+CC = gcc
+LD = $(CC)
+CFLAGS = -g -Wall -O2 -fPIC
+LDFLAGS = --shared -Wl,--version-script,$(MAP)
+LDLIBS = -ldl -lresolv
+
+MKDIR = mkdir -p
+INSTALL = install -c
+RM = rm -f
+
+DESTDIR =
+LIBDIR = ${HOME}/lib
+
+LIBSHARED = libdsocks.so.1.0
+
+OBJS = atomicio.o dsocks.o strlcpy.o
+MAP = libdsocks.map
+
+all: $(LIBSHARED)
+
+$(LIBSHARED): $(OBJS) $(MAP)
+	$(LD) $(LDFLAGS) $(OBJS) $(LDLIBS) -o $@
+
+.c.o:
+	$(CC) $(CFLAGS) -c $*.c
+
+install:
+	$(MKDIR) $(LIBDIR)
+	$(INSTALL) -m 755 $(LIBSHARED) $(DESTDIR)$(LIBDIR)
+clean:
+	$(RM) $(LIBSHARED) *.o

@@ -1,0 +1,9 @@
+{
+  global:
+    connect;
+    gethostbyname;
+    getaddrinfo;
+    _dsocks_init;
+  local:
+    *;
+};
