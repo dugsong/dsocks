@@ -280,7 +280,7 @@ static struct hostent host;
 static char *host_aliases[MAXALIASES];
 static char hostbuf[BUFSIZ+1];
 
-#ifdef NS_GET16
+#if !defined(_getshort) && defined(NS_GET16)
 #define _getshort ns_get16
 #endif
 
