@@ -54,6 +54,20 @@ static gethostbyname_fn	  _sys_gethostbyname;
 #define IS_LOOPBACK(sa)	(((struct sockaddr_in *)sa)->sin_addr.s_addr == \
 			 htonl(INADDR_LOOPBACK))
 
+static in_addr_t
+_inet_addr(const char* addr)
+{
+	struct in_addr ip;
+	ip.s_addr = inet_addr(addr);
+	if (ip.s_addr == INADDR_NONE) {
+		struct hostent *he = _sys_gethostbyname(addr);
+		if (he) {
+			memcpy(&ip, he->h_addr, sizeof(struct in_addr));
+		}
+	}
+	return ip.s_addr;
+}
+
 static int
 _sin_aton(const char *str, struct sockaddr_in *sin, int default_port)
 {
@@ -63,7 +77,7 @@ _sin_aton(const char *str, struct sockaddr_in *sin, int default_port)
 	int ret = -1;
 	
 	if ((p = tmp = strdup(str)) != NULL) {
-		ip = inet_addr(strsep(&p, ":"));
+		ip = _inet_addr(strsep(&p, ":"));
 		port = p ? atoi(p) : default_port;
 		if (ip != -1 && port != 0) {
 			sin->sin_family = AF_INET;
@@ -203,6 +217,9 @@ connect(int fd, const struct sockaddr *sa, socklen_t len)
 	struct sockaddr_in sin;
 	int oval;
 	socklen_t olen = sizeof(oval);
+	fd_set wfds;
+	struct timeval tv = {0, 0};
+	int n;
 	
 	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &oval, &olen) < 0) {
 		return (-1);
@@ -214,12 +231,34 @@ connect(int fd, const struct sockaddr *sa, socklen_t len)
 	}
 	if ((*_sys_connect)(fd, (struct sockaddr *)&_dsocks_sin,
 		sizeof(_dsocks_sin)) == -1) {
-		warnx("(dsocks) couldn't connect to proxy at %s",
-		    _sin_ntoa(&_dsocks_sin));
-		return (-1);
+		if (errno != EINPROGRESS) {
+			goto CONNECT_FAILED;
+		} else {
+			FD_ZERO(&wfds);
+			FD_SET(fd, &wfds);
+			tv.tv_sec = 30;	/* Wait for 30 seconds */
+			n = select(fd + 1, NULL, &wfds, NULL, &tv);
+			if (n < 0) {
+				goto CONNECT_FAILED;
+			} else if (n == 0) {
+				errno = ETIMEDOUT;
+				goto CONNECT_FAILED;
+			} else {
+        		getsockopt(fd, SOL_SOCKET, SO_ERROR, &n, (socklen_t*)&len);
+        		if (n != 0) {
+	        		errno = n;
+	        		goto CONNECT_FAILED;
+        		}
+			}
+		}
 	}
 	memcpy(&sin, sa, sizeof(sin));
 	return ((*_dsocks_connect)(fd, (struct sockaddr *)&sin, sizeof(sin)));
+
+CONNECT_FAILED:
+	warnx("(dsocks) couldn't connect to proxy at %s, error: %s",
+	    _sin_ntoa(&_dsocks_sin), strerror(errno));
+	return (-1);
 }
 
 static int
@@ -255,7 +294,7 @@ static struct hostent host;
 static char *host_aliases[MAXALIASES];
 static char hostbuf[BUFSIZ+1];
 
-#ifdef NS_GET16
+#if !defined(_getshort) && defined(NS_GET16)
 #define _getshort ns_get16
 #endif
 
@@ -609,6 +648,18 @@ _dsocks_init(void)
 	char *env;
 	void *libc;
 
+#ifndef DL_LAZY
+# define DL_LAZY RTLD_LAZY
+#endif
+	if (!(libc = dlopen(DSOCKS_PATH_LIBC, DL_LAZY)))
+		err(1, "(dsocks) couldn't dlopen %s", DSOCKS_PATH_LIBC);
+	else if (!(_sys_connect = dlsym(libc, DSOCKS_SYM_CONNECT)))
+		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_CONNECT);
+	else if (!(_sys_gethostbyname = dlsym(libc, DSOCKS_SYM_GETHOSTBYNAME)))
+		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETHOSTBYNAME);
+	else if (!(_sys_getaddrinfo = dlsym(libc, DSOCKS_SYM_GETADDRINFO)))
+		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETADDRINFO);
+
 	_dsocks_connect = _dsocks4_connect;
 	
 	if ((env = getenv(DSOCKS_ENV_VERSION)) != NULL) {
@@ -639,15 +690,4 @@ _dsocks_init(void)
 		/* XXX - getpwuid() actually fails on MacOS X Leopard! */
 		strlcpy(_dsocks_user, getenv("USER"), sizeof(_dsocks_user));
 	}
-#ifndef DL_LAZY
-# define DL_LAZY RTLD_LAZY
-#endif
-	if (!(libc = dlopen(DSOCKS_PATH_LIBC, DL_LAZY)))
-		err(1, "(dsocks) couldn't dlopen %s", DSOCKS_PATH_LIBC);
-	else if (!(_sys_connect = dlsym(libc, DSOCKS_SYM_CONNECT)))
-		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_CONNECT);
-	else if (!(_sys_gethostbyname = dlsym(libc, DSOCKS_SYM_GETHOSTBYNAME)))
-		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETHOSTBYNAME);
-	else if (!(_sys_getaddrinfo = dlsym(libc, DSOCKS_SYM_GETADDRINFO)))
-		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETADDRINFO);
 }
