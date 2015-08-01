@@ -203,6 +203,9 @@ connect(int fd, const struct sockaddr *sa, socklen_t len)
 	struct sockaddr_in sin;
 	int oval;
 	socklen_t olen = sizeof(oval);
+	fd_set wfds;
+	struct timeval tv = {0, 0};
+	int n;
 	
 	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &oval, &olen) < 0) {
 		return (-1);
@@ -214,12 +217,34 @@ connect(int fd, const struct sockaddr *sa, socklen_t len)
 	}
 	if ((*_sys_connect)(fd, (struct sockaddr *)&_dsocks_sin,
 		sizeof(_dsocks_sin)) == -1) {
-		warnx("(dsocks) couldn't connect to proxy at %s",
-		    _sin_ntoa(&_dsocks_sin));
-		return (-1);
+		if (errno != EINPROGRESS) {
+			goto CONNECT_FAILED;
+		} else {
+			FD_ZERO(&wfds);
+			FD_SET(fd, &wfds);
+			tv.tv_sec = 30;	/* Wait for 30 seconds */
+			n = select(fd + 1, NULL, &wfds, NULL, &tv);
+			if (n < 0) {
+				goto CONNECT_FAILED;
+			} else if (n == 0) {
+				errno = ETIMEDOUT;
+				goto CONNECT_FAILED;
+			} else {
+        		getsockopt(fd, SOL_SOCKET, SO_ERROR, &n, (socklen_t*)&len);
+        		if (n != 0) {
+	        		errno = n;
+	        		goto CONNECT_FAILED;
+        		}
+			}
+		}
 	}
 	memcpy(&sin, sa, sizeof(sin));
 	return ((*_dsocks_connect)(fd, (struct sockaddr *)&sin, sizeof(sin)));
+
+CONNECT_FAILED:
+	warnx("(dsocks) couldn't connect to proxy at %s, error: %s",
+	    _sin_ntoa(&_dsocks_sin), strerror(errno));
+	return (-1);
 }
 
 static int
