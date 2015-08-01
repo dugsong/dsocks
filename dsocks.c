@@ -54,6 +54,20 @@ static gethostbyname_fn	  _sys_gethostbyname;
 #define IS_LOOPBACK(sa)	(((struct sockaddr_in *)sa)->sin_addr.s_addr == \
 			 htonl(INADDR_LOOPBACK))
 
+static in_addr_t
+_inet_addr(const char* addr)
+{
+	struct in_addr ip;
+	ip.s_addr = inet_addr(addr);
+	if (ip.s_addr == INADDR_NONE) {
+		struct hostent *he = _sys_gethostbyname(addr);
+		if (he) {
+			memcpy(&ip, he->h_addr, sizeof(struct in_addr));
+		}
+	}
+	return ip.s_addr;
+}
+
 static int
 _sin_aton(const char *str, struct sockaddr_in *sin, int default_port)
 {
@@ -63,7 +77,7 @@ _sin_aton(const char *str, struct sockaddr_in *sin, int default_port)
 	int ret = -1;
 	
 	if ((p = tmp = strdup(str)) != NULL) {
-		ip = inet_addr(strsep(&p, ":"));
+		ip = _inet_addr(strsep(&p, ":"));
 		port = p ? atoi(p) : default_port;
 		if (ip != -1 && port != 0) {
 			sin->sin_family = AF_INET;
@@ -634,6 +648,18 @@ _dsocks_init(void)
 	char *env;
 	void *libc;
 
+#ifndef DL_LAZY
+# define DL_LAZY RTLD_LAZY
+#endif
+	if (!(libc = dlopen(DSOCKS_PATH_LIBC, DL_LAZY)))
+		err(1, "(dsocks) couldn't dlopen %s", DSOCKS_PATH_LIBC);
+	else if (!(_sys_connect = dlsym(libc, DSOCKS_SYM_CONNECT)))
+		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_CONNECT);
+	else if (!(_sys_gethostbyname = dlsym(libc, DSOCKS_SYM_GETHOSTBYNAME)))
+		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETHOSTBYNAME);
+	else if (!(_sys_getaddrinfo = dlsym(libc, DSOCKS_SYM_GETADDRINFO)))
+		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETADDRINFO);
+
 	_dsocks_connect = _dsocks4_connect;
 	
 	if ((env = getenv(DSOCKS_ENV_VERSION)) != NULL) {
@@ -664,15 +690,4 @@ _dsocks_init(void)
 		/* XXX - getpwuid() actually fails on MacOS X Leopard! */
 		strlcpy(_dsocks_user, getenv("USER"), sizeof(_dsocks_user));
 	}
-#ifndef DL_LAZY
-# define DL_LAZY RTLD_LAZY
-#endif
-	if (!(libc = dlopen(DSOCKS_PATH_LIBC, DL_LAZY)))
-		err(1, "(dsocks) couldn't dlopen %s", DSOCKS_PATH_LIBC);
-	else if (!(_sys_connect = dlsym(libc, DSOCKS_SYM_CONNECT)))
-		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_CONNECT);
-	else if (!(_sys_gethostbyname = dlsym(libc, DSOCKS_SYM_GETHOSTBYNAME)))
-		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETHOSTBYNAME);
-	else if (!(_sys_getaddrinfo = dlsym(libc, DSOCKS_SYM_GETADDRINFO)))
-		err(1, "(dsocks) couldn't dlsym '%s'", DSOCKS_SYM_GETADDRINFO);
 }
